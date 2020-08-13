@@ -1,0 +1,12 @@
+__pycache__/*
+__pycache__/
+__pycache__
+.idea
+.idea/
+*.py~
+venv/
+.vs/
+.vs/*
+.ipynb_checkpoints/
+wandercraft_arm_exp/.ipynb_checkpoints/
+fluent_elbow_testcase/.ipynb_checkpoints/

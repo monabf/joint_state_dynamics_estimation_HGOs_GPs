@@ -1,0 +1,12 @@
+# Copyright 2019 Max Planck Society. All rights reserved.
+# Call this file from src to launch mass_spring_mass_testcase/cluster_submission/MSM_observer_GP.sh
+executable = /bin/bash
+arguments = mass_spring_mass_testcase/cluster_submission/MSM_observer_GP.sh $(Process)
+error = ../Figures/Logs/MSM_observer_GP$(Process).err
+output = ../Figures/Logs/MSM_observer_GP$(Process).out
+log = ../Figures/Logs/MSM_observer_GP$(Process).log
+request_memory = 15000
+request_cpus = 1
++MaxRunningPrice = 1000
++RunningPriceExceededAction = "kill"
+queue 13

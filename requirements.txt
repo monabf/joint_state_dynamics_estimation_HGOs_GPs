@@ -1,0 +1,73 @@
+# To install required packages in virtual environment:
+# cd this_repo
+# python3 -m venv venv
+# source venv/bin/activate
+
+# On setting up PyCharm wiht virtualenv: https://stackoverflow.com/questions/33868806/configuring-pycharm-with-existing-virtualenv
+# To rename folders: https://askubuntu.com/questions/643098/recursive-directory-renaming
+
+# To solve problems with virtualenv and matplotlib in Mac OS, either do:
+# https://markhneedham.com/blog/2018/05/04/python-runtime-error-osx-matplotlib-not-installed-as-framework-mac/
+# but does not seem to work (fixes error but figures are all black), or with
+# Python3 simply use venv (newer) instead of virtualenv which builds python as a
+# framework: https://docs.python.org/3/library/venv.html
+# Further: https://github.com/matplotlib/matplotlib/issues/12074
+
+# If no plots showing: sudo apt-get install python3-tk
+# import matplotlib
+# matplotlib.use('TkAgg')
+
+
+numpy
+matplotlib
+pandas
+seaborn
+jupyter
+sklearn
+
+# Install GPy: https://github.com/SheffieldML/GPy
+# Workaround the build fails errors (after installing cython with pip and doing
+# pip freeze — local | grep -v ‘^\-e’ | cut -d = -f 1 | xargs -n1 pip install -U to update all packages):
+# https://github.com/SheffieldML/GPy/issues/649
+# On Windows if problem building GPy because rc.exe is not found:
+# follow https://stackoverflow.com/questions/14372706/visual-studio-cant-build-due-to-rc-exe
+# or equivalent (problem with Visual Studio)
+# To use multivariate Gaussian priors: replace the class MultivariateGaussian in
+# ../venv/lib/python3.7/site-packages/GPy/core/parameterization/priors.py
+# with the class MultivariateGaussian from our src/priors.py file
+GPy
+
+transformations
+
+# Install PyFMI https://pypi.org/project/PyFMI/
+# Needs prior install of cython and FMI Library: https://jmodelica.org/FMILibrary/
+# https://stackoverflow.com/questions/40156622/importing-libraries
+# export FMIL_HOME=$HOME/build-fmil/2.0.3/ in terminal before installing pyfmi
+# Needs prior install of GCC and OMP, in Mac through brew install gcc and brew
+# install libomp. Example usage https://jmodelica.org/pyfmi/tutorial.html
+cython
+#pyfmi
+
+# To run experiments on the Tuebingen cluster:
+# ssh buissonfenet@login.cluster.is.localnet + usual campus password
+# You are in your home directory, and can copy files back and forth from your local computer.
+# To do that with the GUI: open file system, click other location, type sftp://buissonfenet@login.cluster.is.localnet
+# There you can see your cluster home and its contents, and copy scripts and data back and forth
+# Wiki on how to use the cluster and launch jobs: https://atlas.is.localnet/confluence/display/IT/Cluster+Introduction,
+# use condor_submit_bid 10 <file>.sub
+# Software already on the cluster can be seen at /is/software, and includes MuJoCo
+# To use it you must do export LD_LIBRARY_PATH=/is/software/mujoco/linux/mujoco200/bin$LD_LIBRARY_PATH,
+# export MUJOCO_PY_MJKEY_PATH=/is/software/mujoco/linux/mujoco200/bin/mjkey.txt,
+# and export MUJOCO_PY_MUJOCO_PATH=/is/software/mujoco/linux/mujoco200
+# My submission files are in a cluster_submissions folder, they can be run
+# directly from src with condor_submit_bid 50 cluster_submissions/<file>.sub.
+# They use bash as executable and call a /<file>.sh file that sources the
+# virtual env, exports the necessary global variables, then calls the
+# corresponding python script.
+# On the cluster, rather launch 100 short jobs with 1 core each than 1 long job
+# with 100 cores, queue system will take care of parallelization and all
+# starting them one after the other! Have scripts that are fixed and do not
+# change (since do not know when and therefore which version cluster will use
+# when job actually runs); if parameters need to be set then pass them as
+# arguments to python script, and have several python scripts one for each
+# method to test, then just change which python script is called by sub file!
