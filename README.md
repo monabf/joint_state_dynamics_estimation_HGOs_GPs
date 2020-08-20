@@ -12,8 +12,7 @@ Code for paper "Joint state and dynamics estimation with high-gain observers and
  - install all requirements with pip (pip install -r repo/requirements.txt)
  - if any problems occur during the installation of required packages, see requirements.txt for possible fixes
  - if you want to use multivariate Gaussian priors for hyperparameter
-  optimization, replace the file priors.py in your virtual environment dir/venv/lib/python3.7/site-packages/GPy
- /core/parametrization/ by the file dir/repo/priors.py (pull request pending)
+  optimization, replace the file priors.py in your virtual environment dir/venv/lib/python3.7/site-packages/GPy/core/parametrization/ by the file dir/repo/priors.py (pull request pending)
  - cd repo, run python mass_spring_mass_testcase/MSM_observer_GP.py 1 (1
   = process number, used for logging)
 
