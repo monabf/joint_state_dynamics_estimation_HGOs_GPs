@@ -1,5 +1,4 @@
-Code for paper "Joint state and dynamics estimation with high-gain observers
- and Gaussian process state-space models", by Mona Buisson-Fenet, Valéry
+Code for paper "Joint state and dynamics estimation with high-gain observers and Gaussian process models", by Mona Buisson-Fenet, Valéry
   Morgenthaler, Sebastian Trimpe, and Florent Di Meglio. Focusing on a dynamical
    system in observable canonical form with an unknown nonlinearity, the aim
     is to jointly estimate the state and the nonlinearity. 
