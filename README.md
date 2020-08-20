@@ -1,7 +1,7 @@
 Code for paper "Joint state and dynamics estimation with high-gain observers and Gaussian process models", by Mona Buisson-Fenet, Valéry
   Morgenthaler, Sebastian Trimpe, and Florent Di Meglio. Focusing on a dynamical
    system in observable canonical form with an unknown nonlinearity, the aim
-    is to jointly estimate the state and the nonlinearity. 
+    is to jointly estimate the state with a high-gain observer and the nonlinearity with a Gaussian process model. 
  \
  \
  To reproduce the results from the paper:
