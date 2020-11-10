@@ -16,8 +16,8 @@ Code for paper "Joint state and dynamics estimation with high-gain observers and
  - cd repo, run python mass_spring_mass_testcase/MSM_observer_GP.py 1 (1
   = process number, used for logging)
 
-This will run the simulation described in the paper for 10 cycles, with 10
- rollouts used for evaluation at each cycle. Modify the config parameters in the
+This will run the simulation described in the paper for 10 cycles from 10 random initial conditions, with 10
+ test trajectories used for evaluation at each cycle. Modify the config parameters in the
   script to change the settings.
 
 To play with other methods and test cases, look into the
