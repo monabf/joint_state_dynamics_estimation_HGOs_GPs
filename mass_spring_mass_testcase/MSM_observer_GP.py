@@ -119,11 +119,18 @@ if __name__ == '__main__':
             dynamics=mass_spring_mass_dynamics_z,
             dynamics_x=mass_spring_mass_dynamics_x,
             controller=sin_controller_1D,
-            init_state_x=reshape_pt1(np.array([[0, -0.01, 0.1, 0.01]])),
-            init_state_estim=reshape_pt1(np.array([[0, 0, 0, 0]])),
             init_control=reshape_pt1([0])))
-        config.update(dict(
-            init_state=mass_spring_mass_xtoz(config.init_state_x, config)))
+        # init_state_x = reshape_pt1(np.array([[0, -0.01, 0.1, 0.01]]))
+        # Random initial state
+        xmin = np.array([0., -0.005, 0.1, -0.005])
+        xmax = np.array([0.1, 0.005, 0.2, 0.005])
+        init_state_x = reshape_pt1(np.random.uniform(low=xmin, high=xmax))
+        init_state = mass_spring_mass_xtoz(init_state_x, config)
+        init_state_estim = np.concatenate((reshape_pt1(init_state[0, 0]),
+            reshape_pt1(np.array([[0] * (init_state.shape[1]-1)]))), axis=1)
+        config.update(dict(init_state_x=init_state_x,
+                           init_state=init_state,
+                           init_state_estim=init_state_estim))
         # Unstable limit cycle: needs g=50 or so with fhat=f to compensate
         #     init_state=reshape_pt1(np.array([[
         #         0.06328351129370620, -0.4068801516907030, 0.4852631041981480,
@@ -193,8 +200,10 @@ if __name__ == '__main__':
                 observer_prior_mean=None,
                 prior_mean=MSM_continuous_to_discrete_justvelocity_prior_mean,
                 prior_mean_deriv=None))
-            config.update(dict(init_state_estim=reshape_pt1(
-                [0, 0, 0, 0, config.prior_kwargs['observer_gains'].get('g')])))
+            config.update(dict(init_state_estim=np.concatenate((
+                    config.init_state_estim,
+                    reshape_pt1([config.prior_kwargs['observer_gains'].get(
+                        'g')])), axis=1)))
         elif 'No_observer' in config.system:
             config.update(dict(observer=None,
                                observer_prior_mean=None))
