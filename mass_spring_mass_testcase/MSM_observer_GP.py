@@ -79,7 +79,7 @@ if __name__ == '__main__':
                     true_meas_noise_var=1e-8,
                     process_noise_var=1e-8,
                     optim_method='RK23',  # good solver needed for z
-                    nb_loops=1,
+                    nb_loops=10,
                     nb_rollouts=10,
                     rollout_length=200,
                     rollout_controller={'random': 3, 'sin_controller_1D': 4,
