@@ -1,10 +1,8 @@
-import os
-
 import numpy as np
+import os
 import pandas as pd
 import seaborn as sb
 from matplotlib import pyplot as plt
-
 from plotting_closedloop_rollouts import model_closedloop_rollout
 from plotting_kalman_rollouts import model_kalman_rollout
 from plotting_rollouts import model_rollout
@@ -21,15 +19,19 @@ sb.set_style('whitegrid')
 # Evaluate model over a grid
 # https://stackoverflow.com/questions/14827650/pyplot-scatter-plot-marker-size
 # https://stackoverflow.com/questions/36607742/drawing-phase-space-trajectories-with-arrows-in-matplotlib
-def model_evaluation(Evaluation_grid, Grid_controls, Predicted_grid,
-                     True_predicted_grid, folder, ground_truth_approx=False,
-                     title=None, quiver=False, verbose=False):
+def plot_model_evaluation(Evaluation_grid, Grid_controls, Predicted_grid,
+                          True_predicted_grid, folder,
+                          ground_truth_approx=False, title=None,
+                          quiver=False, l2_error_array=np.array([]),
+                          verbose=False):
     nb = 50000
     Evaluation_grid = Evaluation_grid[:nb]
     Grid_controls = Grid_controls[:nb]
     Predicted_grid = Predicted_grid[:nb]
     True_predicted_grid = True_predicted_grid[:nb]
-    if not ground_truth_approx:
+    if ground_truth_approx:
+        l2_error_array = np.array([])
+    else:
         quiver = False
 
     for i in range(Evaluation_grid.shape[1]):
@@ -50,6 +52,12 @@ def model_evaluation(Evaluation_grid, Grid_controls, Predicted_grid,
                            Predicted_grid[1:, j] - Predicted_grid[:-1, j],
                            label='GP mean prediction', color='blue', alpha=0.6,
                            angles='xy', scale_units='xy', scale=1)
+            elif l2_error_array.any():
+                plt.scatter(Evaluation_grid[:, i], Predicted_grid[:, j],
+                            s=5, cmap='jet', c=l2_error_array,
+                            label='Prediction', alpha=0.6)
+                cbar = plt.colorbar()
+                cbar.set_label('Squared L2 prediction error')
             else:
                 plt.scatter(Evaluation_grid[:, i], True_predicted_grid[:, j],
                             s=5, c='g', label='True model', alpha=0.9)
@@ -94,6 +102,12 @@ def model_evaluation(Evaluation_grid, Grid_controls, Predicted_grid,
                            Predicted_grid[1:, j] - Predicted_grid[:-1, j],
                            label='GP mean prediction', color='blue', alpha=0.6,
                            angles='xy', scale_units='xy', scale=1)
+            elif l2_error_array.any():
+                plt.scatter(Grid_controls[:, i], Predicted_grid[:, j],
+                            s=5, cmap='jet', c=l2_error_array,
+                            label='Prediction', alpha=0.6)
+                cbar = plt.colorbar()
+                cbar.set_label('Squared L2 prediction error')
             else:
                 plt.scatter(Grid_controls[:, i], True_predicted_grid[:, j],
                             s=5, c='g', label='True model', alpha=0.9)
@@ -153,14 +167,18 @@ def run_rollouts(dyn_GP, input_rollout_list, folder, observer=None,
         var_vector = reshape_pt1(np.repeat(reshape_pt1(dyn_GP.scaler_X.var_),
                                            len(complete_true_mean), axis=0))
 
-    # Quite slow, parallelize a bit?
+    # TODO parallelize running different rollouts?
     for i in range(len(input_rollout_list)):
-        if (i == 0) and (dyn_GP.step > 0):
-            save = True
-            verbose = dyn_GP.verbose
-        else:
+        if not dyn_GP.monitor_experiment:
             save = False
             verbose = False
+        else:
+            if (i == 0) and (dyn_GP.step > 0):
+                save = True
+                verbose = dyn_GP.verbose
+            else:
+                save = False
+                verbose = False
         if kalman:
             init_state, control_traj, true_mean, predicted_mean, \
             predicted_var, predicted_lowconf, predicted_uppconf, RMSE, \
@@ -219,7 +237,7 @@ def run_rollouts(dyn_GP, input_rollout_list, folder, observer=None,
 
 
 # Plot raw data received by GP
-def save_GP_data(dyn_GP, verbose=False):
+def save_GP_data(dyn_GP, direct=True, verbose=False):
     for i in range(dyn_GP.X.shape[1]):
         name = 'GP_input' + str(i) + '.pdf'
         plt.plot(dyn_GP.GP_X[:, i], label='GP_X' + str(i))
@@ -259,18 +277,19 @@ def save_GP_data(dyn_GP, verbose=False):
             plt.show()
         plt.close('all')
 
-    for i in range(dyn_GP.X.shape[1]):
-        for j in range(dyn_GP.Y.shape[1]):
-            name = 'GP_data' + str(i) + str(j) + '.pdf'
-            plt.scatter(dyn_GP.X[:, i], dyn_GP.Y[:, j], c='c')
-            plt.title('Direct visualization of GP data')
-            plt.xlabel('GP_X_' + str(i))
-            plt.ylabel('GP_Y_' + str(j))
-            plt.savefig(os.path.join(dyn_GP.results_folder, name),
-                        bbox_inches='tight')
-            if verbose:
-                plt.show()
-            plt.close('all')
+    if direct:
+        for i in range(dyn_GP.X.shape[1]):
+            for j in range(dyn_GP.Y.shape[1]):
+                name = 'GP_data' + str(i) + str(j) + '.pdf'
+                plt.scatter(dyn_GP.X[:, i], dyn_GP.Y[:, j], c='c')
+                plt.title('Direct visualization of GP data')
+                plt.xlabel('GP_X_' + str(i))
+                plt.ylabel('GP_Y_' + str(j))
+                plt.savefig(os.path.join(dyn_GP.results_folder, name),
+                            bbox_inches='tight')
+                if verbose:
+                    plt.show()
+                plt.close('all')
 
 
 # Plot GP predictions with control = 0, over a linspace of each input dim
@@ -287,21 +306,25 @@ def plot_GP(dyn_GP, grid, verbose=False):
         u = data[:, xdim:]
         predicted_mean, predicted_var, predicted_lowconf, \
         predicted_uppconf = dyn_GP.predict(x, u)
-        true_predicted_mean = predicted_mean.copy()
-        for idx, _ in enumerate(true_predicted_mean):
-            true_predicted_mean[idx] = reshape_pt1(
-                dyn_GP.true_dynamics(reshape_pt1(x[idx]), reshape_pt1(u[idx])))
+        if not dyn_GP.ground_truth_approx:
+            true_predicted_mean = predicted_mean.copy()
+            for idx, _ in enumerate(true_predicted_mean):
+                true_predicted_mean[idx] = reshape_pt1(
+                    dyn_GP.true_dynamics(reshape_pt1(x[idx]),
+                                         reshape_pt1(u[idx])))
+            df = pd.DataFrame(true_predicted_mean)
+            df.to_csv(os.path.join(
+                dyn_GP.results_folder, 'GP_plot_true' + str(i) + '.csv'),
+                header=False)
         df = pd.DataFrame(predicted_mean)
         df.to_csv(os.path.join(dyn_GP.results_folder, 'GP_plot_estim' + str(i)
-                               + '.csv'), header=False)
-        df = pd.DataFrame(true_predicted_mean)
-        df.to_csv(os.path.join(dyn_GP.results_folder, 'GP_plot_true' + str(i)
                                + '.csv'), header=False)
         for j in range(dyn_GP.Y.shape[1]):
             # Plot function learned by GP
             name = 'GP_plot' + str(i) + str(j) + '.pdf'
-            plt.plot(data[:, i], true_predicted_mean[:, j],
-                     label='True function', c='darkgreen')
+            if not dyn_GP.ground_truth_approx:
+                plt.plot(data[:, i], true_predicted_mean[:, j],
+                         label='True function', c='darkgreen')
             plt.plot(data[:, i], predicted_mean[:, j], label='GP mean',
                      alpha=0.9)
             plt.fill_between(data[:, i], predicted_lowconf[:, j],
@@ -320,42 +343,42 @@ def plot_GP(dyn_GP, grid, verbose=False):
                 plt.show()
             plt.close('all')
 
-    if 'Michelangelo' in dyn_GP.system:
-        for i in range(dyn_GP.X.shape[1]):
-            dataplot = np.linspace(np.min(grid[:, i]), np.max(grid[:, i]),
-                                   dyn_GP.nb_plotting_pts)
-            data = np.zeros((dyn_GP.nb_plotting_pts, xdim + udim))
-            data[:, i] = dataplot
-            x = data[:, :xdim]
-            u = data[:, xdim:]
-            predicted_mean_deriv, predicted_var_deriv, \
-            predicted_lowconf_deriv, predicted_uppconf_deriv = \
-                dyn_GP.predict_deriv(x, u)
-            df = pd.DataFrame(predicted_mean_deriv)
-            df.to_csv(os.path.join(dyn_GP.results_folder, 'GP_plot_deriv' +
-                                   str(i) + '.csv'), header=False)
-            for j in range(predicted_mean_deriv.shape[1]):
-                # Plot derivative of function learned by GP
-                name = 'GP_plot_deriv' + str(i) + str(j) + '.pdf'
-                plt.plot(x[:, i], predicted_mean_deriv[:, j],
-                         label='dGP_' + str(j) + '/dx')
-                plt.fill_between(x[:, i], predicted_lowconf_deriv[:, j],
-                                 predicted_uppconf_deriv[:, j],
-                                 facecolor='blue', alpha=0.2)
-                if not dyn_GP.ground_truth_approx:
-                    plt.title('Visualization of GP posterior derivative')
-                else:
-                    plt.title(
-                        'Visualization of GP posterior derivative over'
-                        'training data')
-                plt.legend()
-                plt.xlabel('Input state ' + str(i))
-                plt.ylabel('GP derivative prediction ' + str(j) + '(x)')
-                plt.savefig(os.path.join(dyn_GP.results_folder, name),
-                            bbox_inches='tight')
-                if verbose:
-                    plt.show()
-                plt.close('all')
+    # if any(k in dyn_GP.system for k in ['Michelangelo', 'EKF']):
+    #     for i in range(dyn_GP.X.shape[1]):
+    #         dataplot = np.linspace(np.min(grid[:, i]), np.max(grid[:, i]),
+    #                                dyn_GP.nb_plotting_pts)
+    #         data = np.zeros((dyn_GP.nb_plotting_pts, xdim + udim))
+    #         data[:, i] = dataplot
+    #         x = data[:, :xdim]
+    #         u = data[:, xdim:]
+    #         predicted_mean_deriv, predicted_var_deriv, \
+    #         predicted_lowconf_deriv, predicted_uppconf_deriv = \
+    #             dyn_GP.predict_deriv(x, u)
+    #         df = pd.DataFrame(predicted_mean_deriv)
+    #         df.to_csv(os.path.join(dyn_GP.results_folder, 'GP_plot_deriv' +
+    #                                str(i) + '.csv'), header=False)
+    #         for j in range(predicted_mean_deriv.shape[1]):
+    #             # Plot derivative of function learned by GP
+    #             name = 'GP_plot_deriv' + str(i) + str(j) + '.pdf'
+    #             plt.plot(x[:, i], predicted_mean_deriv[:, j],
+    #                      label='dGP_' + str(j) + '/dx')
+    #             plt.fill_between(x[:, i], predicted_lowconf_deriv[:, j],
+    #                              predicted_uppconf_deriv[:, j],
+    #                              facecolor='blue', alpha=0.2)
+    #             if not dyn_GP.ground_truth_approx:
+    #                 plt.title('Visualization of GP posterior derivative')
+    #             else:
+    #                 plt.title(
+    #                     'Visualization of GP posterior derivative over'
+    #                     'training data')
+    #             plt.legend()
+    #             plt.xlabel('Input state ' + str(i))
+    #             plt.ylabel('GP derivative prediction ' + str(j) + '(x)')
+    #             plt.savefig(os.path.join(dyn_GP.results_folder, name),
+    #                         bbox_inches='tight')
+    #             if verbose:
+    #                 plt.show()
+    #             plt.close('all')
 
 
 # Save data from outside the GP model into its results folder

@@ -8,14 +8,14 @@ import numpy as np
 import pandas as pd
 import seaborn as sb
 from matplotlib import pyplot as plt
-from multioutput_GPy_wrapper import MultiOutput_GPy_Wrapper
 from sklearn import preprocessing
 
 from config import Config
 from controllers import sin_controller_1D, sin_controller_02D, null_controller
+from multioutput_GPy_wrapper import MultiOutput_GPy_Wrapper
 from plotting_closedloop_rollouts import plot_closedloop_rollout_data, \
     save_closedloop_rollout_variables
-from plotting_functions import model_evaluation, save_GP_data, plot_GP, \
+from plotting_functions import plot_model_evaluation, save_GP_data, plot_GP, \
     run_rollouts
 from plotting_kalman_rollouts import save_kalman_rollout_variables, \
     plot_kalman_rollout_data
@@ -32,11 +32,48 @@ sb.set_style('whitegrid')
 # For free system where U=0 uniformly: make U a matrix of zeros,
 # control ignored for learning
 
+# Problem pickle with GPy kernels: are not serializable after having been
+# used with a GPy model!!
+# https://github.com/SheffieldML/GPy/issues/605
+
 
 class Simple_GP_Dyn:
 
     def __getattr__(self, item):
-        return self.config.__getattr__(item)
+        # self.config.params[item] can be called directly as self.item
+        try:
+            return self.config.__getattr__(item)
+        except KeyError:
+            try:
+                return self.__getattr__(item)
+            except KeyError:
+                raise AttributeError(item)
+
+    def __getstate__(self):
+        # needed for pickle with custom __getattr__:
+        # https://stackoverflow.com/questions/50888391/pickle-of-object-with-getattr-method-in-python-returns-typeerror-object-no
+        # return self.__dict__
+        # to handle pickling exception with used GPy kernels
+        # https://github.com/SheffieldML/GPy/issues/605
+        # https://stackoverflow.com/questions/2999638/how-to-stop-attributes-from-being-pickled-in-python
+        d = self.__dict__.copy()
+        if 'config' in d:
+            if 'kernel' in d['config']:
+                d['config'].params['kernel'] = 'kernel'
+        return d
+
+    def __setstate__(self, d):
+        # needed for pickle with custom __getattr__:
+        # https://stackoverflow.com/questions/50888391/pickle-of-object-with-getattr-method-in-python-returns-typeerror-object-no
+        # self.__dict__.update(d)
+        # to handle pickling exception with used GPy kernels
+        # https://github.com/SheffieldML/GPy/issues/605
+        # https://stackoverflow.com/questions/2999638/how-to-stop-attributes-from-being-pickled-in-python
+        logging.warning('If you are loading this GPy model from pickle, no '
+                        'kernel is contained in it since GPy kernels are not '
+                        'serializable, you need to set one manually! Only '
+                        'serialize such GPy models once!')
+        self.__dict__.update(d)
 
     def __init__(self, X, U, Y, config: Config, ground_truth_approx=False):
         assert len(X) == len(U) == len(Y), 'X, U and Y must have the same ' \
@@ -194,7 +231,8 @@ class Simple_GP_Dyn:
                                      self.results_folder)
             save_rollout_variables(self.results_folder, self.nb_rollouts,
                                    self.rollout_list, step=self.step,
-                                   ground_truth_approx=self.ground_truth_approx)
+                                   ground_truth_approx=self.ground_truth_approx,
+                                   plots=self.monitor_experiment)
             # Save log in results folder
             os.rename('../Figures/Logs/' + 'log' + str(sys.argv[1]) + '.log',
                       os.path.join(self.results_folder,
@@ -217,8 +255,6 @@ class Simple_GP_Dyn:
         self.current_time += time.time() - start
         self.time = np.concatenate((self.time, reshape_pt1(
             np.array([self.sample_idx, self.current_time]))), axis=0)
-        if self.monitor_experiment:
-            self.evaluate_model()
         return self.model
 
     def create_GP_model(self):
@@ -235,6 +271,7 @@ class Simple_GP_Dyn:
                     self.model.models[k].kern.parameters[i].constrain_bounded(
                         1e-3, 200.)
         elif self.sparse:
+            # https://github.com/SheffieldML/GPy/issues/602
             if self.sparse.get('nb_inducing_inputs'):
                 self.nb_inducing_inputs = np.min([self.sparse.get(
                     'nb_inducing_inputs'), len(self.GP_X)])
@@ -442,36 +479,43 @@ class Simple_GP_Dyn:
                         np.array([self.sample_idx] + [
                             np.copy(self.model.param_array)[i] for i in
                             range(len(self.model.param_array))]))), axis=0)
-        if self.monitor_experiment:
-            for i in range(self.GP_X.shape[1]):
-                for j in range(self.GP_Y.shape[1]):
-                    # Plot GP model at each input dim i over np.arange(dataMax,
-                    # dataMin) while all other input dims are set at 0, j =
-                    # output dim as vertical axis. Predicitons are valid
-                    # inisde GP model (no prior mean taken into account,
-                    # normalized data)!!
-                    name = 'GP_model_update' + str(i) + str(j) + '.pdf'
-                    self.model.plot(plot_density=False, plot_data=False,
-                                    visible_dims=[i], which_data_ycols=[j])
-                    plt.title('Visualization of GP posterior')
-                    plt.legend()
-                    plt.xlabel('Input state ' + str(i))
-                    plt.ylabel('GP prediction ' + str(j))
-                    plt.savefig(os.path.join(self.results_folder, name),
-                                bbox_inches='tight')
-                    if self.verbose:
-                        plt.show()
-                    plt.close('all')
+        # if self.monitor_experiment:
+        #     for i in range(self.GP_X.shape[1]):
+        #         for j in range(self.GP_Y.shape[1]):
+        #             # Plot GP model at each input dim i over np.arange(dataMax,
+        #             # dataMin) while all other input dims are set at 0, j =
+        #             # output dim as vertical axis. Predicitons are valid
+        #             # inisde GP model (no prior mean taken into account,
+        #             # normalized data)!!
+        #             name = 'GP_model_update' + str(i) + str(j) + '.pdf'
+        #             self.model.plot(plot_density=False, plot_data=False,
+        #                             visible_dims=[i], which_data_ycols=[j])
+        #             plt.title('Visualization of GP posterior')
+        #             plt.legend()
+        #             plt.xlabel('Input state ' + str(i))
+        #             plt.ylabel('GP prediction ' + str(j))
+        #             plt.savefig(os.path.join(self.results_folder, name),
+        #                         bbox_inches='tight')
+        #             if self.verbose:
+        #                 plt.show()
+        #             plt.close('all')
 
     def optimize_hyperparameters(self, model):
         # Optimize hyperparameters
         if self.hyperparam_optim == 'fixed_hyperparameters':
-            pass
+            if self.sparse:
+                # https://github.com/SheffieldML/GPy/issues/623
+                for i in range(len(model.kern.parameters)):
+                    model.kern.parameters[i].fix()
+                model.likelihood.variance.fix()
+                model.optimize_restarts(num_restarts=5, verbose=True,
+                                        max_iters=100, robust=True)
+            else:
+                pass
         elif self.hyperparam_optim == 'fixed_start':
             model.optimize(start=self.start_optim_fixed, messages=self.verbose,
                            max_iters=100)
         else:
-
             model.optimize_restarts(num_restarts=5, verbose=True,
                                     max_iters=100, robust=True)
         self.last_optimparams = self.step
@@ -563,13 +607,17 @@ class Simple_GP_Dyn:
                     GP_x = np.concatenate((reshape_pt1(scaled_x),
                                            reshape_pt1(u)), axis=1)
                 mean, var = self.model.predict(GP_x, full_cov=False)
+                # Ignore variance too low
+                if np.max(np.abs(var)) < 1e-8:
+                    var = 1e-8 * np.ones_like(var)
+                # No normalization for variance, use uppconf/lowconf instead!!
                 predicted_mean = reshape_pt1(
                     self.scaler_Y.inverse_transform(mean))
                 predicted_var = reshape_pt1(var)
                 predicted_lowconf = reshape_pt1(
-                    self.scaler_Y.inverse_transform(mean - 2 * var))
+                    self.scaler_Y.inverse_transform(mean - 2 * np.sqrt(var)))
                 predicted_uppconf = reshape_pt1(
-                    self.scaler_Y.inverse_transform(mean + 2 * var))
+                    self.scaler_Y.inverse_transform(mean + 2 * np.sqrt(var)))
                 if self.prior_mean:
                     # Add prior mean: predicted_x = GP_predicts(x) + prior(x)
                     prior = reshape_pt1(
@@ -610,21 +658,72 @@ class Simple_GP_Dyn:
                     GP_x = np.concatenate(
                         (reshape_pt1(scaled_x), reshape_pt1(u)),
                         axis=1)
+                mean0, var0 = self.model.predict(GP_x, full_cov=False)
                 mean, var = self.model.predictive_gradients(GP_x, self.kernel)
-                mean = np.reshape(mean, GP_x.shape)
-                var = np.reshape(var, GP_x.shape)
-                predicted_mean = reshape_pt1(
-                    self.scaler_Y.inverse_transform(mean))
-                predicted_var = reshape_pt1(var)
-                predicted_lowconf = reshape_pt1(
-                    self.scaler_Y.inverse_transform(mean - 2 * var))
-                predicted_uppconf = reshape_pt1(
-                    self.scaler_Y.inverse_transform(mean + 2 * var))
-                if self.prior_mean:
-                    assert self.prior_mean_deriv, 'A prior function was given ' \
-                                                  'and used in the mean, but its ' \
-                                                  'derivative was not given for ' \
-                                                  'the derivative predictions.'
+                # Ignore variance too low
+                if np.max(np.abs(var)) < 1e-8:
+                    var = 1e-8 * np.ones_like(var)
+                # Denormalize and reshape Jacobian to obtain (N, dy, dx)
+                # No normalization for variance, use uppconf/lowconf instead!!
+                if self.no_control:
+                    sigmaX = self.scaler_X.scale_
+                else:
+                    sigmaX = np.concatenate((self.scaler_X.scale_,
+                                             np.ones(u.shape[1])))
+                sigmaY = self.scaler_Y.scale_
+                if mean.shape[2] == 1:
+                    # dy = 1: mean and var shape (N, dx)
+                    mean = np.squeeze(mean, axis=2)
+                    predicted_mean = np.stack(
+                        [sigmaY * mean[i] / sigmaX for i in range(
+                            mean.shape[0])])
+                    predicted_var = reshape_pt1(var)
+                    sigmainv = 1 / np.sqrt(var0)  # (N, 1)
+                    predicted_lowconf = np.stack(
+                        [sigmaY * (mean[i] - sigmainv[i] * predicted_var[i]) /
+                         sigmaX for i in range(mean.shape[0])])
+                    predicted_uppconf = np.stack(
+                        [sigmaY * (mean[i] + sigmainv[i] * predicted_var[i]) /
+                         sigmaX for i in range(mean.shape[0])])
+                else:
+                    if mean.shape[0] == 1:
+                        # N = 1: mean and var shape (dy, dx)
+                        mean = np.squeeze(mean).T
+                        predicted_mean = reshape_pt1(
+                            np.diag(sigmaY) @ mean @ np.diag(1 / sigmaX))
+                        var = np.squeeze(var)
+                        sigmainv = np.squeeze(np.stack(  # (dy,)
+                            [1 / np.sqrt(var0) for i in range(mean0.shape[1])]))
+                        predicted_var = np.stack(
+                            [var for i in range(mean.shape[0])])
+                        predicted_lowconf = reshape_pt1(
+                            np.diag(sigmaY) @ (mean - sigmainv * predicted_var)
+                            @ np.diag(1 / sigmaX))
+                        predicted_uppconf = reshape_pt1(
+                            np.diag(sigmaY) @ (mean + sigmainv * predicted_var)
+                            @ np.diag(1 / sigmaX))
+                    else:
+                        # mean and var shape (N, dx, dy)
+                        predicted_mean = np.stack(
+                            [np.diag(sigmaY) @ mean[i].T @ np.diag(1 / sigmaX)
+                             for i in range(mean.shape[0])])
+                        predicted_var = np.stack(
+                            [var for i in range(mean.shape[2])], 2)
+                        sigmainv = np.squeeze(
+                            np.stack([1 / np.sqrt(var0) for i in range(
+                                mean0.shape[1])])).T  # (N, dy)
+                        predicted_lowconf = np.stack(
+                            [np.diag(sigmaY) @ (mean - sigmainv *
+                                                predicted_var)[i].T @
+                             np.diag(1 / sigmaX) for i in range(mean.shape[0])])
+                        predicted_uppconf = np.stack(
+                            [np.diag(sigmaY) @ (mean + sigmainv *
+                                                predicted_var)[i].T @
+                             np.diag(1 / sigmaX) for i in range(mean.shape[0])])
+                if self.prior_mean and not self.prior_mean_deriv:
+                    logging.error('A prior function was given and used in the '
+                                  'mean, but its derivative was not given for '
+                                  'the derivative predictions.')
                 if self.prior_mean_deriv:
                     # Add prior mean: predicted_x = GP_predicts(x) + prior(x)
                     prior = reshape_pt1(
@@ -758,36 +857,28 @@ class Simple_GP_Dyn:
         # RMSE, at fixed control, between real and GP predictions
         # Average log probability of real prediction coming from GP predicted
         # distribution (in scaled domain)
-        l2_error_array = np.zeros(
-            (len(true_predicted_grid), true_predicted_grid.shape[1]))
-        for idx, x in enumerate(grid):
-            control = reshape_pt1(grid_controls[idx])
-            if not use_euler:
-                predicted_mean, predicted_var, predicted_lowconf, \
-                predicted_uppconf = self.predict(x, control)
-            elif use_euler == 'Michelangelo':
-                predicted_mean, predicted_var, predicted_lowconf, \
-                predicted_uppconf = \
-                    self.predict_euler_Michelangelo(x, control)
-            elif use_euler == 'discrete_justvelocity':
-                predicted_mean, predicted_var, predicted_lowconf, \
-                predicted_uppconf = \
-                    self.predict_euler_discrete_justvelocity(x, control)
-            elif use_euler == 'continuous_justvelocity':
-                predicted_mean, predicted_var, predicted_lowconf, \
-                predicted_uppconf = \
-                    self.predict_euler_continuous_justvelocity(x, control)
-            else:
-                logging.error('This version of Euler/discretized prediction '
-                              'is not implemented.')
-            true_mean = reshape_pt1(true_predicted_grid[idx])
-            predicted_grid[idx, :-1] = predicted_mean
-            predicted_grid[idx, -1] = predicted_var
+        if not use_euler:
+            predicted_mean, predicted_var, predicted_lowconf, \
+            predicted_uppconf = self.predict(grid, grid_controls)
+        elif use_euler == 'Michelangelo':
+            predicted_mean, predicted_var, predicted_lowconf, \
+            predicted_uppconf = \
+                self.predict_euler_Michelangelo(grid, grid_controls)
+        elif use_euler == 'discrete_justvelocity':
+            predicted_mean, predicted_var, predicted_lowconf, \
+            predicted_uppconf = \
+                self.predict_euler_discrete_justvelocity(grid, grid_controls)
+        elif use_euler == 'continuous_justvelocity':
+            predicted_mean, predicted_var, predicted_lowconf, \
+            predicted_uppconf = \
+                self.predict_euler_continuous_justvelocity(grid, grid_controls)
+        else:
+            logging.error('This version of Euler/discretized prediction '
+                          'is not implemented.')
+        l2_error_array = np.square(true_predicted_grid - predicted_mean)
+        predicted_grid = np.concatenate((predicted_mean, predicted_var), axis=1)
 
-            l2_error_array[idx] = np.square(
-                reshape_pt1(true_mean) - predicted_mean)
         self.variables['l2_error_array'] = l2_error_array
-
         RMSE_array_dim = np.mean(l2_error_array, axis=0)
         RMSE = RMS(true_predicted_grid - predicted_grid[:, :-1])
         if true_predicted_grid.shape[1] > 1:
@@ -958,8 +1049,8 @@ class Simple_GP_Dyn:
                         logging.warning(
                             'Ignored a rollout with diverging true '
                             'trajectory, with initial state ' + str(
-                                init_state) + ' and maximum reached abs value '
-                            + str(max))
+                                init_state) + ' and maximum reached absolute '
+                                              'value ' + str(max))
                         continue
                     i += 1
                     rollout_list.append([init_state, control_traj, true_mean])
@@ -1056,7 +1147,8 @@ class Simple_GP_Dyn:
             save_rollout_variables(
                 self.results_folder, self.nb_rollouts, complete_rollout_list,
                 step=self.step - 1, results=True,
-                ground_truth_approx=self.ground_truth_approx)
+                ground_truth_approx=self.ground_truth_approx,
+                plots=self.monitor_experiment)
 
     def evaluate_kalman_rollouts(self, observer, observe_data,
                                  discrete_observer, no_GP_in_observer=False,
@@ -1107,7 +1199,8 @@ class Simple_GP_Dyn:
             save_kalman_rollout_variables(
                 self.results_folder, self.nb_rollouts, complete_rollout_list,
                 step=self.step - 1,
-                ground_truth_approx=self.ground_truth_approx)
+                ground_truth_approx=self.ground_truth_approx,
+                plots=self.monitor_experiment)
 
     def evaluate_closedloop_rollouts(self, observer, observe_data,
                                      no_GP_in_observer=False):
@@ -1156,7 +1249,8 @@ class Simple_GP_Dyn:
             save_closedloop_rollout_variables(
                 self.results_folder, self.nb_rollouts, complete_rollout_list,
                 step=self.step - 1,
-                ground_truth_approx=self.ground_truth_approx)
+                ground_truth_approx=self.ground_truth_approx,
+                plots=self.monitor_experiment)
 
     def save_log(self, results_folder):
         logging.INFO
@@ -1212,7 +1306,8 @@ class Simple_GP_Dyn:
                                                    step=self.step - 1)
         save_rollout_variables(folder, self.nb_rollouts, self.rollout_list,
                                step=self.step,
-                               ground_truth_approx=self.ground_truth_approx)
+                               ground_truth_approx=self.ground_truth_approx,
+                               plots=self.monitor_experiment)
         self.save_log(folder)
         self.results_folder = folder
 
@@ -1299,18 +1394,21 @@ class Simple_GP_Dyn:
                 self.stand_log_likelihood_time = self.stand_log_likelihood_time[
                                                  -1:, :]
 
-        if self.verbose:
-            logging.info('Saved intermediate results in')
-            logging.info(self.results_folder)
-
     def save_folder(self, results_folder):
         # Save all variables in a folder, plot results over time
         self.variables['X'] = self.X
         self.variables['Y'] = self.Y
         self.variables['U'] = self.U
+        self.variables['Computation_time'] = self.time
         self.specs['model'] = self.model
-        # Store parameters in file
-        specs_file = os.path.join(self.results_folder, 'Specifications.txt')
+        self.specs['X_mean'] = self.scaler_X.mean_
+        self.specs['X_var'] = self.scaler_X.var_
+        self.specs['Y_mean'] = self.scaler_Y.mean_
+        self.specs['Y_var'] = self.scaler_Y.var_
+        self.specs['sparse'] = self.sparse
+
+        # Store results and parameters in files
+        specs_file = os.path.join(results_folder, 'Specifications.txt')
         with open(specs_file, 'w') as f:
             for key, val in self.specs.items():
                 if key == 'kernel':
@@ -1326,38 +1424,127 @@ class Simple_GP_Dyn:
                             print(self.model.kern.parameters[i], file=f)
                 else:
                     print(key, ': ', val, file=f)
+        for key, val in self.variables.items():
+            if key.startswith('test_') or key.startswith('val_') or (
+                    'rollout' in key):
+                # Avoid saving all test and validation variables, and only
+                # save rollout variables in rollout functions
+                continue
+            filename = str(key) + '.csv'
+            file = pd.DataFrame(val)
+            file.to_csv(os.path.join(results_folder, filename),
+                        header=False)
+        filename = 'Hyperparameters.csv'
+        file = pd.DataFrame(self.hyperparams)
+        file.to_csv(os.path.join(results_folder, filename), header=False)
 
-        # Plot computation time over time
-        plt.close('all')
-        name = 'Computation_time' + '.pdf'
-        plt.plot(self.time[:, 0], self.time[:, 1], 'lime',
-                 label='Time (s)')
-        plt.title('Computation times over time')
-        plt.legend()
-        plt.xlabel('Number of samples')
-        plt.ylabel('Computation time')
-        plt.savefig(os.path.join(results_folder, name),
-                    bbox_inches='tight')
-        plt.close('all')
+    def save(self):
+        # Evaluate model
+        l2_error, RMSE, SRMSE, self.grid_variables['Predicted_grid'], \
+        self.grid_variables['True_predicted_grid'], _, log_likelihood, \
+        stand_log_likelihood = self.evaluate_model()
+        # Run rollouts
+        self.evaluate_rollouts()
 
-        # Plot RMSE over time
+        # Update all evaluation variables
+        self.variables['RMSE_time'] = self.RMSE_time
+        self.variables['SRMSE_time'] = self.SRMSE_time
+        self.variables['log_likelihood_time'] = self.log_likelihood_time
+        self.variables[
+            'stand_log_likelihood_time'] = self.stand_log_likelihood_time
+        self.variables['RMSE_time'] = self.RMSE_time
+        self.variables['SRMSE_time'] = self.SRMSE_time
+        self.variables['log_AL_time'] = self.log_likelihood_time
+        self.variables['stand_log_AL_time'] = self.stand_log_likelihood_time
+        self.specs['l2_error'] = l2_error
+        self.specs['RMSE'] = RMSE
+        self.specs['SRMSE'] = SRMSE
+        self.specs['log_AL'] = log_likelihood
+        self.specs['stand_log_AL'] = stand_log_likelihood
+
+        # If memory saving, read complete variables
+        if self.step > 1 and self.memory_saving:
+            self.save_intermediate(memory_saving=True, ignore_first=True)
+            self.read_grid_variables(self.results_folder)
+            self.read_variables(self.results_folder)
+            self.X = self.variables['X']
+            self.Y = self.variables['Y']
+            self.U = self.variables['U']
+            self.time = self.variables['Computation_time']
+            self.RMSE_time = self.variables['RMSE_time']
+            self.SRMSE_time = self.variables['SRMSE_time']
+            self.log_likelihood_time = self.variables['log_AL_time']
+            self.stand_log_likelihood_time = self.variables[
+                'stand_log_AL_time']
+
+        # Save updated evaluation variables along with all other variables
+        self.save_folder(self.results_folder)
+        filename = 'Predicted_grid.csv'
+        file = pd.DataFrame(self.grid_variables['Predicted_grid'])
+        file.to_csv(os.path.join(self.results_folder, filename),
+                    header=False)
+        # Reindex all files so indexes follow properly
+        for key, val in self.variables.items():
+            if key.startswith('test_') or key.startswith('val_') or (
+                    'rollout' in key):
+                # Avoid saving all test and validation variables, and only
+                # save rollout variables in rollout functions
+                continue
+            filename = str(key) + '.csv'
+            file = pd.read_csv(os.path.join(self.results_folder, filename),
+                               sep=',', header=None)
+            file = file.drop(file.columns[0], axis=1)
+            file.reset_index(drop=True)
+            file.to_csv(os.path.join(self.results_folder, filename),
+                        mode='w', header=False)
+
         if self.monitor_experiment:
+            # Plot and save individual results of evaluation as csv and pdf
+            if not self.ground_truth_approx:
+                direct = True
+            else:
+                direct = False
+            save_GP_data(self, direct=direct, verbose=self.verbose)
+            plot_model_evaluation(
+                self.grid_variables['Evaluation_grid'],
+                self.grid_variables['Grid_controls'],
+                self.grid_variables['Predicted_grid'],
+                self.grid_variables['True_predicted_grid'],
+                self.results_folder,
+                ground_truth_approx=self.ground_truth_approx,
+                l2_error_array=np.mean(self.variables['l2_error_array'],
+                                       axis=1), verbose=False)
+            plot_GP(self, grid=np.concatenate((
+                self.grid_variables['Evaluation_grid'],
+                self.grid_variables['Grid_controls']), axis=1),
+                    verbose=self.verbose)
+
+            # Plot computation time over time
+            plt.close('all')
+            name = 'Computation_time' + '.pdf'
+            plt.plot(self.time[:, 0], self.time[:, 1], 'lime',
+                     label='Time (s)')
+            plt.title('Computation times over time')
+            plt.legend()
+            plt.xlabel('Number of samples')
+            plt.ylabel('Computation time')
+            plt.savefig(os.path.join(self.results_folder, name),
+                        bbox_inches='tight')
+            plt.close('all')
+
+            # Plot RMSE over time
             name = 'RMSE' + '.pdf'
-            # self.RMSE_time = self.RMSE_time[
-            #     np.logical_not(self.RMSE_time[:, 0] == 0)]
             plt.plot(self.RMSE_time[:, 0], self.RMSE_time[:, 1], 'c',
                      label='RMSE')
             plt.title('RMSE between model and true dynamics over time')
             plt.legend()
             plt.xlabel('Number of samples')
             plt.ylabel('RMSE')
-            plt.savefig(os.path.join(results_folder, name),
+            plt.savefig(os.path.join(self.results_folder, name),
                         bbox_inches='tight')
             plt.close('all')
 
             name = 'SRMSE' + '.pdf'
-            # self.SRMSE_time = self.SRMSE_time[
-            #     np.logical_not(self.SRMSE_time[:, 0] == 0)]
             plt.plot(self.SRMSE_time[:, 0], self.SRMSE_time[:, 1], 'c',
                      label='SRMSE')
             plt.title('Standardized RMSE between model and true dynamics over '
@@ -1365,13 +1552,11 @@ class Simple_GP_Dyn:
             plt.legend()
             plt.xlabel('Number of samples')
             plt.ylabel('SRMSE')
-            plt.savefig(os.path.join(results_folder, name),
+            plt.savefig(os.path.join(self.results_folder, name),
                         bbox_inches='tight')
             plt.close('all')
 
             name = 'Average_log_likelihood' + '.pdf'
-            # self.log_likelihood_time = self.log_likelihood_time[
-            #     np.logical_not(self.log_likelihood_time[:, 0] == 0)]
             plt.plot(self.log_likelihood_time[:, 0],
                      self.log_likelihood_time[:, 1], 'c', label='log_AL')
             plt.title(
@@ -1380,13 +1565,11 @@ class Simple_GP_Dyn:
             plt.legend()
             plt.xlabel('Number of samples')
             plt.ylabel('Average log likelihood')
-            plt.savefig(os.path.join(results_folder, name),
+            plt.savefig(os.path.join(self.results_folder, name),
                         bbox_inches='tight')
             plt.close('all')
 
             name = 'Standardized_average_log_likelihood' + '.pdf'
-            # self.stand_log_likelihood_time = self.stand_log_likelihood_time[
-            #     np.logical_not(self.stand_log_likelihood_time[:, 0] == 0)]
             plt.plot(self.stand_log_likelihood_time[:, 0],
                      self.stand_log_likelihood_time[:, 1], 'c', label='log_AL')
             plt.title(
@@ -1395,119 +1578,41 @@ class Simple_GP_Dyn:
             plt.legend()
             plt.xlabel('Number of samples')
             plt.ylabel('Standardized average log likelihood')
-            plt.savefig(os.path.join(results_folder, name),
+            plt.savefig(os.path.join(self.results_folder, name),
                         bbox_inches='tight')
             plt.close('all')
 
-        # Plot histogram of L2 error over grid
-        l2_error_array = self.variables['l2_error_array']
-        for i in range(self.grid.shape[1]):
-            for j in range(self.Y.shape[1]):
-                name = 'Histogram2d_L2_error' + str(i) + str(j) + '.pdf'
-                nb_bins = 40
-                plt.hist2d(self.grid[:, i], l2_error_array[:, j], bins=nb_bins)
-                plt.title('Repartition of L2 errors over evaluation grid')
-                plt.xlabel('Evaluation point ' + str(i))
-                plt.ylabel('L2 error' + str(j))
-                plt.savefig(os.path.join(results_folder, name),
+            # Plot histogram of L2 error over grid
+            # l2_error_array = self.variables['l2_error_array']
+            # for i in range(self.grid.shape[1]):
+            #     for j in range(self.Y.shape[1]):
+            #         name = 'Histogram2d_L2_error' + str(i) + str(j) + '.pdf'
+            #         nb_bins = 40
+            #         plt.hist2d(self.grid[:, i], l2_error_array[:, j],
+            #                    bins=nb_bins)
+            #         plt.title('Repartition of L2 errors over evaluation grid')
+            #         plt.xlabel('Evaluation point ' + str(i))
+            #         plt.ylabel('L2 error' + str(j))
+            #         plt.savefig(os.path.join(self.results_folder, name),
+            #                     bbox_inches='tight')
+            #         plt.close('all')
+            filename = 'l2_error_array.csv'
+            file = pd.DataFrame(self.variables['l2_error_array'])
+            file.to_csv(os.path.join(self.results_folder, filename),
+                        header=False)
+
+            # Plot evolution of hyperparameters over time
+            for i in range(1, self.hyperparams.shape[1]):
+                name = 'Hyperparameter' + str(i) + '.pdf'
+                plt.plot(self.hyperparams[:, 0], self.hyperparams[:, i],
+                         c='darkblue', label='Hyperparameter')
+                plt.title('Evolution of hyperparameters during exploration')
+                plt.legend()
+                plt.xlabel('Number of samples')
+                plt.ylabel('Hyperparameter value')
+                plt.savefig(os.path.join(self.results_folder, name),
                             bbox_inches='tight')
                 plt.close('all')
-        filename = 'l2_error_array.csv'
-        file = pd.DataFrame(self.variables['l2_error_array'])
-        file.to_csv(os.path.join(self.results_folder, filename),
-                    header=False)
-
-        # Plot evolution of hyperparameters over time
-        for i in range(1, self.hyperparams.shape[1]):
-            name = 'Hyperparameter' + str(i) + '.pdf'
-            plt.plot(self.hyperparams[:, 0], self.hyperparams[:, i],
-                     c='darkblue', label='Hyperparameter')
-            plt.title('Evolution of hyperparameters during exploration')
-            plt.legend()
-            plt.xlabel('Number of samples')
-            plt.ylabel('Hyperparameter value')
-            plt.savefig(os.path.join(results_folder, name),
-                        bbox_inches='tight')
-            plt.close('all')
-
-        logging.info(self.results_folder)
-
-    def save(self):
-        # Retrieve all complete variables and save everything in folder
-        l2_error, RMSE, SRMSE, self.grid_variables['Predicted_grid'], \
-        self.grid_variables['True_predicted_grid'], _, log_likelihood, \
-        stand_log_likelihood = self.evaluate_model()
-        self.RMSE_time = np.concatenate((self.RMSE_time, reshape_pt1(
-            np.array([self.sample_idx, RMSE]))), axis=0)
-        self.SRMSE_time = np.concatenate((self.SRMSE_time, reshape_pt1(
-            np.array([self.sample_idx, SRMSE]))), axis=0)
-        self.log_likelihood_time = np.concatenate(
-            (self.log_likelihood_time, reshape_pt1(
-                np.array([self.sample_idx, log_likelihood]))), axis=0)
-        self.stand_log_likelihood_time = np.concatenate(
-            (self.stand_log_likelihood_time, reshape_pt1(
-                np.array([self.sample_idx, stand_log_likelihood]))), axis=0)
-        self.variables['RMSE_time'] = self.RMSE_time
-        self.variables['SRMSE_time'] = self.SRMSE_time
-        self.variables['log_likelihood_time'] = self.log_likelihood_time
-        self.variables[
-            'stand_log_likelihood_time'] = self.stand_log_likelihood_time
-        self.specs['l2_error'] = l2_error
-        self.specs['RMSE'] = RMSE
-        self.specs['SRMSE'] = SRMSE
-        self.specs['log_AL'] = log_likelihood
-        self.specs['stand_log_AL'] = stand_log_likelihood
-        self.specs['X_mean'] = self.scaler_X.mean_
-        self.specs['X_var'] = self.scaler_X.var_
-        self.specs['Y_mean'] = self.scaler_Y.mean_
-        self.specs['Y_var'] = self.scaler_Y.var_
-        for key, val in self.grid_variables.items():
-            if key == 'Predicted_grid':
-                filename = str(key) + '.csv'
-                file = pd.DataFrame(val)
-                file.to_csv(os.path.join(self.results_folder, filename),
-                            header=False)
-
-        filename = 'Hyperparameters.csv'
-        file = pd.DataFrame(self.hyperparams)
-        file.to_csv(os.path.join(self.results_folder, filename),
-                    header=False)
-
-        if self.step > 1 and self.memory_saving:
-            self.save_intermediate(memory_saving=True, ignore_first=True)
-            # Read complete variables at the end
-            self.read_grid_variables(self.results_folder)
-            self.read_variables(self.results_folder)
-            self.X = self.variables['X']
-            self.Y = self.variables['Y']
-            self.U = self.variables['U']
-            self.time = self.variables['Computation_time']
-            if self.monitor_experiment:
-                self.RMSE_time = self.variables['RMSE_time']
-                self.SRMSE_time = self.variables['SRMSE_time']
-                self.log_likelihood_time = self.variables['log_AL_time']
-                self.stand_log_likelihood_time = self.variables[
-                    'stand_log_AL_time']
-        else:
-            self.save_intermediate(memory_saving=False)
-
-        # Evaluate 1 step ahead prediction error over grid
-        model_evaluation(self.grid_variables['Evaluation_grid'],
-                         self.grid_variables['Grid_controls'],
-                         self.grid_variables['Predicted_grid'],
-                         self.grid_variables['True_predicted_grid'],
-                         self.results_folder,
-                         ground_truth_approx=self.ground_truth_approx,
-                         verbose=False)
-        plot_GP(self, grid=np.concatenate((self.grid_variables[
-                                               'Evaluation_grid'],
-                                           self.grid_variables[
-                                               'Grid_controls']), axis=1),
-                verbose=self.verbose)
-        save_GP_data(self, verbose=self.verbose)
-
-        # Run rollouts
-        self.evaluate_rollouts()
 
         if self.verbose:
             logging.info('L2 error per state')
