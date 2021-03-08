@@ -23,3 +23,16 @@ This will run the simulation described in the paper for 10 cycles from 10 random
 To play with other methods and test cases, look into the
  quasilinear_observer_GP.py file and choose which system and method to use, then run python quasilinear_observer_GP.py 1
  
+To cite this paper:
+```
+@article{LCSSpaper,  
+author={M. {Buisson-Fenet} and V. {Morgenthaler} and S. {Trimpe} and F. {Di Meglio}},  
+journal={IEEE Control Systems Letters},   
+title={Joint State and Dynamics Estimation With High-Gain Observers and Gaussian Process Models},   
+year={2021},  
+volume={5},  
+number={5},  
+pages={1627-1632},  
+doi={10.1109/LCSYS.2020.3042412}
+}
+```
