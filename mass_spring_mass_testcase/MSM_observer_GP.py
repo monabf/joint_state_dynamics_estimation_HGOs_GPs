@@ -93,7 +93,7 @@ if __name__ == '__main__':
                     memory_saving=False,
                     restart_on_loop=False,
                     GP_optim_method='lbfgsb',
-                    meas_noise_var=1,  # 1 TODO test Steve
+                    meas_noise_var=1,
                     batch_adaptive_gain=None,
                     observer_prior_mean=None,
                     prior_mean=None,
@@ -112,7 +112,7 @@ if __name__ == '__main__':
             m1=1,
             m2=1,
             k1=0.3,
-            k2=0.1,  # TODO test Steve
+            k2=0.1,
             gamma=0.4,
             omega=1.2, dt=config.dt,
             dt_before_subsampling=0.001,
@@ -217,12 +217,12 @@ if __name__ == '__main__':
             no_control = False
         kernel = GPy.kern.RBF(input_dim=input_dim, variance=3.5,
                               lengthscale=np.array([150, 150, 1.5, 2.5, 2.5]),
-                              ARD=True)  # TODO test Steve
-        kernel.unconstrain()
-        kernel.variance.set_prior(GPy.priors.Gaussian(3.5, 3.5))
-        kernel.lengthscale.set_prior(
-            GPy.priors.MultivariateGaussian(np.array([150, 150, 1.5, 2.5, 2.5]),
-                                            np.diag([150, 150, 1.5, 2.5, 2.5])))
+                              ARD=True)
+        #  kernel.unconstrain()
+        #  kernel.variance.set_prior(GPy.priors.Gaussian(3.5, 3.5))
+        #  kernel.lengthscale.set_prior(
+        #      GPy.priors.MultivariateGaussian(np.array([150, 150, 1.5, 2.5, 2.5]),
+        #                                      np.diag([150, 150, 1.5, 2.5, 2.5])))
         config.update(dict(observe_data=dim1_observe_data,
                            constrain_u=[-config.get('gamma'),
                                         config.get('gamma')],
